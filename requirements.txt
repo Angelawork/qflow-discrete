@@ -1,0 +1,13 @@
+wandb
+gymnasium>=0.29
+gymnasium[mujoco]
+stable-baselines3
+numpy
+torch
+torchvision
+torchtext
+seaborn
+matplotlib
+tensorboard
+virtualenv>=20.0.31
+importlib-metadata; python_version < "3.8"
