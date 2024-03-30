@@ -1,8 +1,9 @@
 #!/bin/bash
 
-#SBATCH --job-name=Hopper_LN_On
+#SBATCH --job-name=Walk_LN_On3
 #SBATCH --output=hparam_tuning_%j.out
 #SBATCH --error=hparam_tuning_%j.err
+#SBATCH --gres=gpu:1
 #SBATCH --time=120:00:00
  #SBATCH --gpus-per-task=rtx8000:1
  #SBATCH --cpus-per-task=6
@@ -16,15 +17,11 @@ echo "Hostname: $(hostname)"
 # Load any modules and activate your Python environment here
 module load python/3.8  
 
-#Xvfb :1 -screen 0 1024x768x16 &
+Xvfb :1 -screen 0 1024x768x16 &
 export DISPLAY=:1
+export CUDA_VISIBLE_DEVICES=0 #for cuda device error
 
-# Clone repo if not present
-if [ ! -d "autoregressive-SQL" ]; then
-  git clone https://github.com/Angelawork/autoregressive-SQL.git
-fi
-
-cd autoregressive-SQL/discrete_SQL/
+cd qflow-discrete/
 
 # install or activate requirements
 if ! [ -d "$SLURM_TMPDIR/env/" ]; then

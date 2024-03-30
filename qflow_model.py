@@ -6,39 +6,55 @@ import torch.nn.functional as F
     
     
 class QMLP(nn.Module):
-    def __init__(self, state_dim, a_dim):
+    def __init__(self, state_dim, a_dim, use_ln=True):
         super(QMLP, self).__init__()
         self.state_dim = state_dim
+        self.use_ln = use_ln
+
         h_dim = 256
         self.fc1 = nn.Linear(state_dim+a_dim, h_dim)
         self.fc2 = nn.Linear(h_dim, h_dim)
         self.fc3 = nn.Linear(h_dim, 1)
-        self.ln1 = nn.LayerNorm(h_dim)
-        self.ln2 = nn.LayerNorm(h_dim)
+        if self.use_ln:
+            self.ln1 = nn.LayerNorm(h_dim)
+            self.ln2 = nn.LayerNorm(h_dim)
         
     def forward(self, s, a):
         x = torch.cat([s, a], dim=1)
-        x = F.gelu(self.ln1(self.fc1(x)))
-        x = F.gelu(self.ln2(self.fc2(x)))
+        if self.use_ln:
+            x = F.gelu(self.ln1(self.fc1(x)))
+            x = F.gelu(self.ln2(self.fc2(x)))
+        else:
+            x = F.gelu(self.fc1(x))
+            x = F.gelu(self.fc2(x))
         x = self.fc3(x)
         return x
     
 class ARMLP(nn.Module):
-    def __init__(self, state_dim, a_bins):
+    def __init__(self, state_dim, a_bins, use_ln=True):
         super(ARMLP, self).__init__()
         self.state_dim = state_dim
+        self.use_ln = use_ln
+        
         h_dim = 256
         self.fc1 = nn.Linear(state_dim, h_dim)
         self.fc2 = nn.Linear(h_dim, h_dim)
         self.fc3 = nn.Linear(h_dim, a_bins)
-        self.ln1 = nn.LayerNorm(h_dim)
-        self.ln2 = nn.LayerNorm(h_dim)
+        if self.use_ln:
+            self.ln1 = nn.LayerNorm(h_dim)
+            self.ln2 = nn.LayerNorm(h_dim)
+        
         self.softmax = nn.Softmax(dim=1)
         self.log_softmax = nn.LogSoftmax(dim=1)
         
     def forward(self, s, tau=1.0):
-        x = F.gelu(self.ln1(self.fc1(s)))
-        x = F.gelu(self.ln2(self.fc2(x)))
+        if self.use_ln:
+            x = F.gelu(self.ln1(self.fc1(s)))
+            x = F.gelu(self.ln2(self.fc2(x)))
+        else:
+            x = F.gelu(self.fc1(s))
+            x = F.gelu(self.fc2(x))
+
         x = self.fc3(x)/tau
         pi = self.softmax(x)
         logp = self.log_softmax(x)
@@ -46,7 +62,7 @@ class ARMLP(nn.Module):
     
 # AutoRegressive Q function
 class GFN(nn.Module):
-    def __init__(self, s_dim, a_dim, a_bins, alpha=1.0, action_min=-1.0, action_max=1.0, gfn_batch_size=64, gfn_lr=1e-3):
+    def __init__(self, s_dim, a_dim, a_bins, alpha=1.0, action_min=-1.0, action_max=1.0, gfn_batch_size=64, gfn_lr=1e-3, use_ln_q=True, use_ln_policy=True):
         super(GFN, self).__init__()
         self.s_dim = s_dim
         self.a_dim = a_dim
@@ -55,12 +71,17 @@ class GFN(nn.Module):
         self.action_min = action_min
         self.action_max = action_max
         self.gfn_batch_size = gfn_batch_size
+        #enable/disable layer norm
+        self.use_ln_q = use_ln_q
+        self.use_ln_policy = use_ln_policy
         
-        self.mlp = nn.ModuleList([ARMLP(s_dim+i,a_bins) for i in range(a_dim)])
-        self.q1 = QMLP(s_dim, a_dim)
-        self.q2 = QMLP(s_dim, a_dim)
-        self.q1_target = QMLP(s_dim, a_dim)
-        self.q2_target = QMLP(s_dim, a_dim)
+        self.mlp = nn.ModuleList([ARMLP(s_dim+i, a_bins, use_ln=use_ln_policy) for i in range(a_dim)])
+
+        self.q1 = QMLP(s_dim, a_dim, use_ln=use_ln_q)
+        self.q2 = QMLP(s_dim, a_dim, use_ln=use_ln_q)
+        self.q1_target = QMLP(s_dim, a_dim, use_ln=use_ln_q)
+        self.q2_target = QMLP(s_dim, a_dim, use_ln=use_ln_q)
+
         self.q1_target.load_state_dict(self.q1.state_dict())
         self.q2_target.load_state_dict(self.q2.state_dict())
         #self.logpb = -torch.tensor(a_dim*np.log(a_bins)).cuda()

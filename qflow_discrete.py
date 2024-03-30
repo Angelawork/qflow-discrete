@@ -66,11 +66,17 @@ def parse_args():
     parser.add_argument('--gfn_lr', type=float, default=5e-4, help='Learning rate for GFlowNet')
     parser.add_argument('--gfn_batch_size', type=int, default=128, help='Batch size for GFlowNet')
     parser.add_argument('--gfn_num_states', type=int, default=128, help='Number of states sampled from replay buffer for GFlowNet')
+    
+    parser.add_argument("--use-ln-q", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
+    help="Enable/disable layer norm in the Q function")
+    parser.add_argument("--use-ln-policy", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
+    help="Enable/disable layer norm in the MLP policy")
+    
     args = parser.parse_args()
     # fmt: on
     return args
 
-def make_env(env_id, seed, idx, capture_video, run_name,step_list=[10000,150000,250000]):
+def make_env(env_id, seed, idx, capture_video, run_name,step_list=[250000,500000]):
     def thunk():
         if capture_video and idx == 0:
             env = gym.make(env_id, render_mode="rgb_array")
@@ -120,6 +126,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+    print(torch.cuda.is_available())
 
     # env setup
     envs = gym.vector.SyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name)])
@@ -136,7 +143,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     else:
         alpha = args.alpha
     
-    gflownet = GFN(s_dim, a_dim, a_bins=args.a_bins, alpha=alpha, action_min=action_min, action_max=action_max, gfn_batch_size=args.gfn_batch_size, gfn_lr=args.gfn_lr).to(device)
+    gflownet = GFN(s_dim, a_dim, a_bins=args.a_bins, alpha=alpha, action_min=action_min, action_max=action_max, gfn_batch_size=args.gfn_batch_size, gfn_lr=args.gfn_lr, use_ln_q=args.use_ln_q, use_ln_policy=args.use_ln_policy).to(device)
     q_optimizer = optim.Adam(list(gflownet.q1.parameters()) + list(gflownet.q2.parameters()), lr=args.q_lr)
     
     envs.single_observation_space.dtype = np.float32

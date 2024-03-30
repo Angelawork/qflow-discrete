@@ -13,7 +13,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from model import QTransformer, ARQ
 from stable_baselines3.common.buffers import ReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
 import stable_baselines3 as sb3
@@ -38,8 +37,8 @@ def random_search(hyperparameter_space, num_samples):
 def run(set_up, hparams, env_id, seed):
     """Run training script with specified hparam."""
     hparams_str = "_".join([f"{k}{v}" for k, v in hparams.items()])
-    run_name = f"{env_id}_{hparams_str}"  
-    command = ["python", "discrete_SQL.py", "--exp-name", run_name, "--env-id", env_id] 
+    run_name = f"_{hparams_str}"  
+    command = ["python", "qflow_discrete.py", "--exp-name", run_name, "--env-id", env_id] 
     for param, value in set_up.items():
         if param != '--seed': 
             command.extend([param, str(value)])
@@ -76,19 +75,20 @@ def hparam_tuning(set_up, hparam_space, seeds, environments,num_samples):
 
 if __name__ == "__main__":
     set_up = {
-        "--total-timesteps": 250000,
+        "--total-timesteps": 500000,
         "--track": True,
-        "--wandb-project-name": "QFlow_Hopper_LN_On",
+        "--wandb-project-name": "QFlow_Walker_LN_On",
         "--wandb-entity": "angela-h",
         "--autotune":True,
         "--capture-video":True,
     }
 
     hyperparameter_space = {
-        "--target-entropy": [0.5],#0.5, 2, 4, 6, 8
-        "--q-steps":[1],
+        "--target-entropy": [4,6],#0.5, 2, 4, 6, 8
+        "--use-ln-q":[True],
+        "--use-ln-policy":[True]
     }
 
-    environments = ["Hopper-v4"] #"Swimmer-v4","Ant-v4","Walker2d-v4"，"Hopper-v4"
+    environments = ["Walker2d-v4"] #"HalfCheetah-v4",18;"Ant-v4","Walker2d-v4",18,"Hopper-v4",8;
     seeds = [42,128,456]
     results = hparam_tuning(set_up, hyperparameter_space, seeds, environments,num_samples=1)
