@@ -101,6 +101,13 @@ class GFN(nn.Module):
         continuous_action = self.action_min + (a + 0.5) * bin_width
         return continuous_action
     
+    def continuous_entropy_loss(logp, p, delta_x):
+        """
+        delta_x: Length of each bin interval in the continuous space
+        """
+        continuous_entropy = -(p * (logp - torch.log(delta_x))).sum(dim=1).mean()
+        return continuous_entropy
+    
     def train_GFN(self, s):
         device = torch.device('cuda')
         s = s.repeat_interleave(self.gfn_batch_size, 0)
@@ -108,29 +115,36 @@ class GFN(nn.Module):
         logpf = torch.zeros((bs,), device=device)
         self.opt.zero_grad()
         
-        pi, logp = self.forward_once(s)
-        dist = torch.distributions.Categorical(pi)
-        a_i = dist.sample().unsqueeze(1)
-        logpf += logp[torch.arange(bs), a_i.squeeze(1)]
-        a_i = self.dequantize_action(a_i)
-        a = a_i
-        for i in range(1, self.a_dim):
-            pi, logp = self.forward_once(s, a)
+        # total log probability of actions
+        total_log_prob = torch.zeros(bs, device=device)
+        
+        # Sequentially sample and accumulate log probabilities across all dimensions
+        for i in range(self.a_dim):
+            pi, logp = self.forward_once(s, a=None if i == 0 else a, tau=None)
             dist = torch.distributions.Categorical(pi)
             a_i = dist.sample().unsqueeze(1)
-            logpf += logp[torch.arange(bs), a_i.squeeze(1)]
+            a_logp = logp.gather(1, a_i).squeeze(1)
+            total_log_prob += a_logp
             a_i = self.dequantize_action(a_i)
-            a = torch.cat([a, a_i], dim=1)
+            a = a_i if i == 0 else torch.cat([a, a_i], dim=1)
+
         logreward_1 = self.q1(s, a)
         logreward_2 = self.q2(s, a)
         logreward = torch.min(logreward_1, logreward_2).flatten()
-        neg_log_pf = self.alpha*(-logpf)
+        
+        # continuous entropy
+        delta_x = torch.tensor((self.action_max - self.action_min) / self.a_bins, device=device)
+        continuous_entropy_adj = total_log_prob - torch.log(delta_x) * self.a_dim
+        
+        neg_log_pf = self.alpha * (-continuous_entropy_adj)#just use eval metric put in the writer, check out entropy value
         logZ = (neg_log_pf + logreward).detach().view(-1, self.gfn_batch_size).mean(1).repeat_interleave(self.gfn_batch_size, 0)
-        loss = 0.5*((-neg_log_pf + logZ - logreward)**2).mean()
+        loss = 0.5 * ((-neg_log_pf + logZ - logreward) ** 2).mean()
+
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.mlp.parameters(), max_norm=1.0)
         self.opt.step()
-        return loss.detach().cpu().numpy(), logZ.mean().detach().cpu().numpy()
+        
+        return loss.detach().cpu().numpy(), logZ.mean().detach().cpu().numpy(), continuous_entropy_adj.mean().item()
         
     def forward_once(self, s, a=None, tau=None):
         if tau is None:

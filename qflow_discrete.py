@@ -175,7 +175,14 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
                 writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
                 writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
+                if args.track:
+                  wandb.log({
+                      "episodic_return": info["episode"]["r"],
+                      "episodic_length": info["episode"]["l"],
+                      "global_step": global_step,
+                  }, step=global_step)
                 break
+
         
         real_next_obs = next_obs.copy()
         for idx, trunc in enumerate(truncations):
@@ -199,7 +206,8 @@ poetry run pip install "stable_baselines3==2.0.0a1"
             q_loss.backward()
             q_optimizer.step()
             
-            gfn_loss, logZ = gflownet.train_GFN(data.observations[:args.gfn_num_states])
+            #gfn_loss, logZ = gflownet.train_GFN(data.observations[:args.gfn_num_states])
+            gfn_loss, logZ, continuous_entropy = gflownet.train_GFN(data.observations[:args.gfn_num_states])
             
             if args.autotune:
                 alpha_loss = (-log_alpha.exp() * (logp + target_entropy)).mean()
@@ -215,11 +223,24 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
                 
             if global_step % 100 == 0:
-                writer.add_scalar("losses/q_loss", q_loss.item(), global_step)
-                writer.add_scalar("losses/gfn_loss", gfn_loss, global_step)
-                writer.add_scalar("losses/logZ", logZ, global_step)
-                writer.add_scalar("losses/td_target", target.mean().item(), global_step)
-                writer.add_scalar("charts/alpha", alpha, global_step)
-                writer.add_scalar("losses/entropy", -logp.mean().item(), global_step)
-                if args.autotune:
-                    writer.add_scalar("charts/alpha_loss", alpha_loss.item(), global_step)
+              writer.add_scalar("losses/q_loss", q_loss.item(), global_step)
+              writer.add_scalar("losses/gfn_loss", gfn_loss, global_step)
+              writer.add_scalar("losses/logZ", logZ, global_step)
+              writer.add_scalar("losses/td_target", target.mean().item(), global_step)
+              writer.add_scalar("charts/alpha", alpha, global_step)
+              writer.add_scalar("losses/entropy", -logp.mean().item(), global_step)
+              if args.autotune:
+                  writer.add_scalar("charts/alpha_loss", alpha_loss.item(), global_step)
+
+              writer.add_scalar("losses/continuous_entropy", continuous_entropy, global_step)
+
+              if args.track:
+                  wandb.log({
+                      "losses/q_loss": q_loss.item(),
+                      "losses/gfn_loss": gfn_loss,
+                      "losses/logZ": logZ,
+                      "losses/td_target": target.mean().item(),
+                      "charts/alpha": alpha,
+                      "losses/entropy": -logp.mean().item(),
+                      "losses/continuous_entropy": continuous_entropy,
+                  }, step=global_step)
